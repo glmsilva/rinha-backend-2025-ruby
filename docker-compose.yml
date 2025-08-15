@@ -19,7 +19,6 @@ services:
       - "3001:3000"
     environment:
       - DATABASE_URL=postgresql://postgres:password@postgres:5432/rinha_db
-      - RACK_ENV=production
     depends_on:
       - postgres
     networks:
@@ -34,7 +33,6 @@ services:
       - "3002:3000"
     environment:
       - DATABASE_URL=postgresql://postgres:password@postgres:5432/rinha_db
-      - RACK_ENV=production
     depends_on:
       - postgres
     networks:
@@ -49,7 +47,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./src/init.sql:/docker-entrypoint-initdb.d/init.sql
