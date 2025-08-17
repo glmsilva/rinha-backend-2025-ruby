@@ -29,13 +29,9 @@ class DefaultHealthcheck
   end
 
   def healthy?
-    #Console.logger.info("Iniciando checagem do Healthcheck: #{should_check?}  ")
-    # return true if @last_check_time.nil?
-
     check_health if should_check?
 
     @last_status.nil? || @last_status
-    # @last_status || false
   end
 
   private
@@ -44,7 +40,6 @@ class DefaultHealthcheck
     return true if @last_check_time.nil?
     return false if @checking
 
-    #Console.logger.info("Ultima checagem foi há #{Process.clock_gettime(Process::CLOCK_MONOTONIC) - @last_check_time} segundos")
     Process.clock_gettime(Process::CLOCK_MONOTONIC) - @last_check_time > @check_interval
   end
 
@@ -52,23 +47,17 @@ class DefaultHealthcheck
     return if @checking
 
     @checking = true
-    # Async do
     begin
       uri = URI.parse(@healthcheck_url)
       http = Net::HTTP.new(uri.host, uri.port)
       http.get('/payments/service-health') do |response|
         @last_status = !JSON.parse(response)['failing']
         @last_check_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        #Console.logger.info("Healthcheck status: #{@last_status ? 'De boa' : 'Nao ta de boa'}  ")
       end
     rescue StandardError => e
       @last_status = false
       @last_check_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      #Console.logger.error("Healthcheck failed: #{e.message}")
     end
-    # ensure
-    # @checking = false
-    # end
   end
 end
 
@@ -87,7 +76,6 @@ class AsyncPaymentQueue
     Async do |task|
     @max_workers.times do |i|
       @workers << Sync do
-        # teste worker dentro do sync
         worker_loop(i)
       end
     end
@@ -112,9 +100,7 @@ class AsyncPaymentQueue
     while @running
       begin
         job = @queue.dequeue
-        # fallback_job = @fallback_queue.dequeue
         process_job(job, worker_id) # if job
-        # process_fallback(fallback_job, worker_id) if fallback_job
         unless @fallback_queue.empty?
           fallback_job = @fallback_queue.dequeue
           process_fallback(fallback_job, worker_id) if fallback_job
@@ -131,14 +117,6 @@ class AsyncPaymentQueue
       return
     end
 
-    # Async do
-    # endpoint = Async::HTTP::Endpoint.parse(DEFAULT_PROCESSOR_URL)
-    # client = Async::HTTP.Client.new(endpoint, retries: 2)
-
-    # response = client.post("/payments", [["content-type", "application/json"]], job[:data])
-    # if response.ok?
-    #   client&.close
-    # end
     uri = URI.parse(DEFAULT_PROCESSOR_URL)
     http = Net::HTTP.new(uri.host, uri.port)
     req = Net::HTTP::Post.new('/payments')
@@ -146,7 +124,7 @@ class AsyncPaymentQueue
     payment_data = {
       amount: job.params['amount'],
       correlationId: job.params['correlationId'],
-      requestedAt: Time.now.utc.strftime("%Y-%m-%dT%H:%M:%S.%LZ")
+      requestedAt: Time.now.iso8601
     }
     req.body = payment_data.to_json
 
@@ -158,14 +136,10 @@ class AsyncPaymentQueue
       end
     end
   rescue StandardError => e
-    retry_job(job, 'default')
-    # ensure
-    #  @session.close
-    # end
+    retry_job(job, 'fallback')
   end
 
   def process_fallback(job, worker_id)
-    # Async do
     uri = URI.parse(FALLBACK_PROCESSOR_URL)
     http = Net::HTTP.new(uri.host, uri.port)
     req = Net::HTTP::Post.new('/payments')
@@ -174,7 +148,7 @@ class AsyncPaymentQueue
     payment_data = {
       amount: job.params['amount'],
       correlationId: job.params['correlationId'],
-      requestedAt: Time.now.utc.strftime("%Y-%m-%dT%H:%M:%S.%LZ")
+      requestedAt: Time.now.iso8601
     }
     req.body = payment_data.to_json
 
@@ -186,24 +160,22 @@ class AsyncPaymentQueue
       end
     end
   rescue StandardError => e
-    retry_job(job, 'default')
-    # ensure
-    #  @session.close
-    # end
-  end
+    retry_job(job, 'fallback')
+ end
 
   def retry_job(job, processor)
-    Async::Task.current.sleep(2)
+    #Async::Task.current.sleep(2)
     @fallback_queue.enqueue(job) if processor == 'fallback'
     @queue.enqueue(job) if processor == 'default'
   end
 end
 
+Sync do
 session = CLIENT.session
 HEALTHCHECK = DefaultHealthcheck.new(check_interval: 5)
 PAYMENT_QUEUE = AsyncPaymentQueue.new(max_workers: 10, healthcheck: HEALTHCHECK, session: session)
 
-Sync do
+
   PAYMENT_QUEUE.start
 
   Guaraci::Server.run(host: '0.0.0.0', port: 3000) do |request|
@@ -216,7 +188,6 @@ Sync do
       }
 
       PAYMENT_QUEUE.enqueue(request)
-      #Console.logger.info("Job enfileirado: #{PAYMENT_QUEUE.size}")
       Guaraci::Response.ok.render
     in ['GET', [rest]]
       handle_summary(rest)
