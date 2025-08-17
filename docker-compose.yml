@@ -12,6 +12,11 @@ services:
     networks:
       - rinha-network
       - payment-processor
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: '15mb'
 
   api1:
     build: .
@@ -25,6 +30,11 @@ services:
       - rinha-network
       - payment-processor
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: '100MB'
 
 
   api2:
@@ -39,6 +49,11 @@ services:
       - rinha-network
       - payment-processor
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: '100MB'
 
   postgres:
     image: postgres:15-alpine
@@ -55,6 +70,11 @@ services:
       - rinha-network
       - payment-processor
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.6'
+          memory: '135MB'
 
 volumes:
   postgres_data:
