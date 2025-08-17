@@ -7,6 +7,7 @@ require 'db/postgres'
 require 'async/job'
 require 'async/http'
 require 'net/http'
+require 'bigdecimal'
 
 DEFAULT_PROCESSOR_URL = 'http://payment-processor-default:8080'
 FALLBACK_PROCESSOR_URL = 'http://payment-processor-fallback:8080'
@@ -231,7 +232,8 @@ Async do
   end
 
   def handle_summary(path)
-    params = path.split('?')[1].split('&')&.map { |q| q.split('=') }.to_a
+    params = path&.split('?')&.[](1)&.split('&')&.map { |q| q&.split('=') }.to_a
+    Console.logger.info(params.empty?)
     session = CLIENT.session
     unless params.empty?
       from = params[0][1]
@@ -239,32 +241,86 @@ Async do
       Console.logger.info("Agregando resumo dos pagamentos, de: #{from}, ate: #{to}")
       result = session.call("SELECT COUNT(*) as total_p, SUM(amount) as a, p as p FROM payments WHERE requested_at BETWEEN '#{from}' AND '#{to}' GROUP BY p")
       Console.logger.info("Resultado do resumo: #{result.to_a.inspect}")
+      result.to_a
 
-      return Guaraci::Response.ok.json({
-                                         default: {
-                                           totalRequests: result.to_a[0][1],
-                                           totalAmount: result.to_a[0][2]
-                                         },
-                                         fallback: {
-                                           totalRequests: result.to_a[1][1],
-                                           totalAmount: result.to_a[1][2]
-                                         }
-                                       }).render if result.to_a.any?
+      payments = result.to_a
+      if payments.size == 1
+        Guaraci::Response.ok.json({
+                                    default: {
+                                      totalRequests: payments[0][0],
+                                      totalAmount: (BigDecimal(payments[0][1].to_s) * 100.0)
+                                    },
+                                    fallback: {
+                                      totalRequests: 0,
+                                      totalAmount: 0
+                                    }
+                                  }).render
+      elsif payments.size == 2
+        Guaraci::Response.ok.json({
+                                    default: {
+                                      totalRequests: result.to_a[0][0],
+                                      totalAmount: (BigDecimal(payments[0][1].to_s) * 100.0)
+                                    },
+                                    fallback: {
+                                      totalRequests: result.to_a[1][0],
+                                      totalAmount: (BigDecimal(payments[1][1].to_s) * 100.0)
+                                    }
+                                  }).render
+      else
+        Guaraci::Response.ok.json({
+                                    default: {
+                                      totalRequests: 0,
+                                      totalAmount: 0
+                                    },
+                                    fallback: {
+                                      totalRequests: 0,
+                                      totalAmount: 0
+                                    }
+                                  }).render
+
+      end
     end
 
-    result = session.call("SELECT COUNT(*) as total_p, SUM(amount) as a, p as p FROM payments WHERE requested_at BETWEEN '#{from}' AND '#{to}' GROUP BY p")
+    result = session.call('SELECT COUNT(*) as total_p, SUM(amount) as a, p as p FROM payments GROUP BY p')
     Console.logger.info("Resultado do resumo: #{result.to_a.inspect} fora do unless")
-# "Resultado do resumo: [[366, 0.72834e4, \"default\"]]
-## se nao tiver fallback no banco resolver
-    Guaraci::Response.ok.json({
-                                default: {
-                                  totalRequests: result.to_a[0][0],
-                                  totalAmount: result.to_a[0][1]
-                                },
-                                fallback: {
-                                  totalRequests: result.to_a[1][0],
-                                  totalAmount: result.to_a[1][1]
-                                }
-                              }).render if result.to_a.any?
+    # "Resultado do resumo: [[366, 0.72834e4, \"default\"]]
+    ## se nao tiver fallback no banco resolver
+
+    payments = result.to_a
+    if payments.size == 1
+      Guaraci::Response.ok.json({
+                                  default: {
+                                    totalRequests: payments[0][0],
+                                    totalAmount: (BigDecimal(payments[0][1].to_s) * 100.0)
+                                  },
+                                  fallback: {
+                                    totalRequests: 0,
+                                    totalAmount: 0
+                                  }
+                                }).render
+    elsif payments.size == 2
+      Guaraci::Response.ok.json({
+                                  default: {
+                                    totalRequests: result.to_a[0][0],
+                                    totalAmount: (BigDecimal(payments[0][1].to_s) * 100.0)
+                                  },
+                                  fallback: {
+                                    totalRequests: result.to_a[1][0],
+                                    totalAmount: (BigDecimal(payments[1][1].to_s) * 100.0)
+                                  }
+                                }).render
+    else
+      Guaraci::Response.ok.json({
+                                  default: {
+                                    totalRequests: 0,
+                                    totalAmount: 0
+                                  },
+                                  fallback: {
+                                    totalRequests: 0,
+                                    totalAmount: 0
+                                  }
+                                }).render
+
+    end
   end
 end
